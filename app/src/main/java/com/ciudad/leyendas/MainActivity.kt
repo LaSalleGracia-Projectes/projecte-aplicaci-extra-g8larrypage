@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvSteps: TextView
     private lateinit var btnSync: TextView
     private val permission = HealthPermission.getReadPermission(StepsRecord::class)
+    private lateinit var lastSyncTime: Instant
 
     @SuppressLint("MissingInflatedId", "SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,6 +114,7 @@ class MainActivity : AppCompatActivity() {
             recordType = StepsRecord::class,
             timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
         )
+        lastSyncTime = now
         val response = healthConnectClient.readRecords(request)
         return response.records.sumOf { it.count }
     }
