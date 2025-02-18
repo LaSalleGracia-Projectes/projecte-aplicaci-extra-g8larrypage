@@ -1,9 +1,12 @@
 package com.ciudad.leyendas
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -12,8 +15,15 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class MainActivity : AppCompatActivity() {
+    @SuppressLint("MissingInflatedId", "SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -51,18 +61,45 @@ class MainActivity : AppCompatActivity() {
 
         val requestPermissions = registerForActivityResult(requestPermissionActivityContract) { granted ->
             if (granted.contains(permission)) {
-                // Permissions successfully granted
+                Toast.makeText(this, "Permissions successfully granted", Toast.LENGTH_SHORT).show()
             } else {
-                // Lack of required permissions
+                Toast.makeText(this, "Lack of required permissions", Toast.LENGTH_SHORT).show()
             }
         }
 
-        suspend fun checkPermissionsAndRun(healthConnectClient: HealthConnectClient) {
+        suspend fun checkPermissionsAndRun(healthConnectClient: HealthConnectClient): Boolean {
             val granted = healthConnectClient.permissionController.getGrantedPermissions()
             if (granted.contains(permission)) {
                 // Permissions already granted; proceed with inserting or reading data
+                return true
             } else {
                 requestPermissions.launch(setOf(permission))
+                return false
+            }
+        }
+
+        suspend fun readSteps(healthConnectClient: HealthConnectClient): Long {
+            val now = Instant.now()
+            val startOfDay = now.truncatedTo(ChronoUnit.DAYS)
+            val request = ReadRecordsRequest(
+                recordType = StepsRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
+            )
+            val response = healthConnectClient.readRecords(request)
+            return response.records.sumOf { it.count }
+        }
+
+        val tvSteps = findViewById<TextView>(R.id.tvSteps)
+        val btnSync = findViewById<TextView>(R.id.btnSync)
+        var hasPermission = false
+
+        btnSync.setOnClickListener {
+            lifecycleScope.launch {
+                hasPermission = checkPermissionsAndRun(healthConnectClient = healthConnectClient)
+                if (hasPermission) {
+                    val steps = readSteps(healthConnectClient)
+                    tvSteps.text = "Pasos: $steps"
+                }
             }
         }
     }
