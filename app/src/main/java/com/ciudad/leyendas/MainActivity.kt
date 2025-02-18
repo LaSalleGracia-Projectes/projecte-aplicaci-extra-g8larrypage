@@ -20,15 +20,19 @@ import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     private lateinit var healthConnectClient: HealthConnectClient
     private lateinit var tvSteps: TextView
     private lateinit var btnSync: TextView
+    private lateinit var tvLastSyncTime: TextView
     private val permission = HealthPermission.getReadPermission(StepsRecord::class)
-    private lateinit var lastSyncTime: Instant
+    private lateinit var syncDataStore: SyncDataStore
 
     @SuppressLint("MissingInflatedId", "SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +47,8 @@ class MainActivity : AppCompatActivity() {
 
         tvSteps = findViewById(R.id.tvSteps)
         btnSync = findViewById(R.id.btnSync)
+        tvLastSyncTime = findViewById(R.id.tvLastSyncTime)
+        syncDataStore = SyncDataStore(this)
 
         val providerPackageName = "com.google.android.apps.healthdata"
         val context: Context = this
@@ -70,6 +76,7 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     val steps = readSteps(healthConnectClient)
                     tvSteps.text = "Pasos: $steps"
+                    saveLastSyncTime()
                 }
             } else {
                 Toast.makeText(this, "Faltan permisos requeridos", Toast.LENGTH_SHORT).show()
@@ -82,6 +89,7 @@ class MainActivity : AppCompatActivity() {
                 if (hasPermission) {
                     val steps = readSteps(healthConnectClient)
                     tvSteps.text = "Pasos: $steps"
+                    saveLastSyncTime()
                 } else {
                     val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
                     if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE && intent != null) {
@@ -89,6 +97,17 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         Toast.makeText(context, "Health Connect no está instalado", Toast.LENGTH_SHORT).show()
                     }
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            syncDataStore.lastSyncTime.collect { lastSyncTime ->
+                lastSyncTime?.let {
+                    val date = Date(it)
+                    val format = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+                    val formattedDate = format.format(date)
+                    tvLastSyncTime.text = "Último sync: $formattedDate"
                 }
             }
         }
@@ -114,8 +133,12 @@ class MainActivity : AppCompatActivity() {
             recordType = StepsRecord::class,
             timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
         )
-        lastSyncTime = now
         val response = healthConnectClient.readRecords(request)
         return response.records.sumOf { it.count }
+    }
+
+    private suspend fun saveLastSyncTime() {
+        val now = Instant.now().toEpochMilli()
+        syncDataStore.saveLastSyncTime(now)
     }
 }
