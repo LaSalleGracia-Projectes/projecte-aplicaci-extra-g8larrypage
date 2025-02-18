@@ -19,6 +19,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.time.Instant
@@ -134,7 +135,14 @@ class MainActivity : AppCompatActivity() {
             timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
         )
         val response = healthConnectClient.readRecords(request)
-        return response.records.sumOf { it.count }
+        val newSteps = response.records.sumOf { it.count }
+
+        val savedSteps = syncDataStore.totalSteps.first() ?: 0
+        if (newSteps != savedSteps) {
+            syncDataStore.saveTotalSteps(newSteps)
+        }
+
+        return newSteps
     }
 
     private suspend fun saveLastSyncTime() {
