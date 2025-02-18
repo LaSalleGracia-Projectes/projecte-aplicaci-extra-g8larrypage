@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -23,6 +24,11 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var healthConnectClient: HealthConnectClient
+    private lateinit var tvSteps: TextView
+    private lateinit var btnSync: TextView
+    private val permission = HealthPermission.getReadPermission(StepsRecord::class)
+
     @SuppressLint("MissingInflatedId", "SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,73 +40,80 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        val providerPackageName = "com.ciudad.leyendas"
+        tvSteps = findViewById(R.id.tvSteps)
+        btnSync = findViewById(R.id.btnSync)
+
+        val providerPackageName = "com.google.android.apps.healthdata"
         val context: Context = this
-        val permission = HealthPermission.getReadPermission(StepsRecord::class)
 
         val availabilityStatus = HealthConnectClient.getSdkStatus(context, providerPackageName)
         if (availabilityStatus == HealthConnectClient.SDK_UNAVAILABLE) {
             return
         }
         if (availabilityStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
-            val uriString = "market://details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
+            val uriString = "https://play.google.com/store/apps/details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
             context.startActivity(
                 Intent(Intent.ACTION_VIEW).apply {
-                    setPackage("com.android.vending")
                     data = Uri.parse(uriString)
-                    putExtra("overlay", true)
-                    putExtra("callerId", context.packageName)
+                    setPackage("com.android.vending")
                 }
             )
             return
         }
-        val healthConnectClient = HealthConnectClient.getOrCreate(context)
+        healthConnectClient = HealthConnectClient.getOrCreate(context)
 
-        // Create the permissions launcher
         val requestPermissionActivityContract = PermissionController.createRequestPermissionResultContract()
-
         val requestPermissions = registerForActivityResult(requestPermissionActivityContract) { granted ->
             if (granted.contains(permission)) {
-                Toast.makeText(this, "Permissions successfully granted", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Lack of required permissions", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        suspend fun checkPermissionsAndRun(healthConnectClient: HealthConnectClient): Boolean {
-            val granted = healthConnectClient.permissionController.getGrantedPermissions()
-            if (granted.contains(permission)) {
-                // Permissions already granted; proceed with inserting or reading data
-                return true
-            } else {
-                requestPermissions.launch(setOf(permission))
-                return false
-            }
-        }
-
-        suspend fun readSteps(healthConnectClient: HealthConnectClient): Long {
-            val now = Instant.now()
-            val startOfDay = now.truncatedTo(ChronoUnit.DAYS)
-            val request = ReadRecordsRequest(
-                recordType = StepsRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
-            )
-            val response = healthConnectClient.readRecords(request)
-            return response.records.sumOf { it.count }
-        }
-
-        val tvSteps = findViewById<TextView>(R.id.tvSteps)
-        val btnSync = findViewById<TextView>(R.id.btnSync)
-        var hasPermission = false
-
-        btnSync.setOnClickListener {
-            lifecycleScope.launch {
-                hasPermission = checkPermissionsAndRun(healthConnectClient = healthConnectClient)
-                if (hasPermission) {
+                Toast.makeText(this, "Permisos concedidos", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
                     val steps = readSteps(healthConnectClient)
                     tvSteps.text = "Pasos: $steps"
                 }
+            } else {
+                Toast.makeText(this, "Faltan permisos requeridos", Toast.LENGTH_SHORT).show()
             }
         }
+
+        btnSync.setOnClickListener {
+            lifecycleScope.launch {
+                val hasPermission = checkPermissionsAndRun(healthConnectClient, requestPermissions)
+                if (hasPermission) {
+                    val steps = readSteps(healthConnectClient)
+                    tvSteps.text = "Pasos: $steps"
+                } else {
+                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
+                    if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE && intent != null) {
+                        context.startActivity(intent)
+                    } else {
+                        Toast.makeText(context, "Health Connect no está instalado", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun checkPermissionsAndRun(
+        healthConnectClient: HealthConnectClient,
+        requestPermissions: ActivityResultLauncher<Set<String>>
+    ): Boolean {
+        val granted = healthConnectClient.permissionController.getGrantedPermissions()
+        return if (granted.contains(permission)) {
+            true
+        } else {
+            requestPermissions.launch(setOf(permission))
+            false
+        }
+    }
+
+    private suspend fun readSteps(healthConnectClient: HealthConnectClient): Long {
+        val now = Instant.now()
+        val startOfDay = now.truncatedTo(ChronoUnit.DAYS)
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records.sumOf { it.count }
     }
 }
