@@ -27,6 +27,11 @@ class SyncDataStore(private val context: Context) {
             preferences[TOTAL_STEPS_KEY]
         }
 
+    val recentSteps: Flow<Long?> = context.dataStore.data
+        .map { preferences ->
+            preferences[RECENT_STEPS_KEY]
+        }
+
     suspend fun saveLastSyncTime(time: Long) {
         context.dataStore.edit { preferences ->
             preferences[LAST_SYNC_TIME_KEY] = time
@@ -42,4 +47,12 @@ class SyncDataStore(private val context: Context) {
         }
     }
 
+    suspend fun saveRecentSteps(steps: Long) {
+        context.dataStore.edit { preferences ->
+            val currentTotalSteps = preferences[TOTAL_STEPS_KEY] ?: 0
+            val recentSteps = steps - currentTotalSteps
+            preferences[RECENT_STEPS_KEY] = recentSteps
+            preferences[TOTAL_STEPS_KEY] = currentTotalSteps + recentSteps
+        }
+    }
 }
