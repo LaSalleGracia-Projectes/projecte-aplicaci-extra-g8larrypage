@@ -1,5 +1,6 @@
 package com.ciudad.leyendas
 
+import SyncWorker
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -19,6 +20,9 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.lifecycleScope
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -26,6 +30,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private lateinit var healthConnectClient: HealthConnectClient
@@ -46,10 +51,29 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
+        setupPeriodicWork()
+
         tvSteps = findViewById(R.id.tvSteps)
         btnSync = findViewById(R.id.btnSync)
         tvLastSyncTime = findViewById(R.id.tvLastSyncTime)
-        syncDataStore = SyncDataStore(this)
+        syncDataStore = SyncDataStore.getInstance(this)
+
+        lifecycleScope.launch {
+            syncDataStore.totalSteps.collect { totalSteps ->
+                tvSteps.text = "Pasos totales: $totalSteps"
+            }
+        }
+
+        lifecycleScope.launch {
+            syncDataStore.lastSyncTime.collect { lastSyncTime ->
+                lastSyncTime?.let {
+                    val date = Date(it)
+                    val format = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+                    val formattedDate = format.format(date)
+                    tvLastSyncTime.text = "Último sync: $formattedDate"
+                }
+            }
+        }
 
         val providerPackageName = "com.google.android.apps.healthdata"
         val context: Context = this
@@ -112,6 +136,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun setupPeriodicWork() {
+        val syncWorkRequest = PeriodicWorkRequestBuilder<SyncWorker>(5, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "SyncWork",
+            ExistingPeriodicWorkPolicy.REPLACE,
+            syncWorkRequest
+        )
     }
 
     private suspend fun checkPermissionsAndRun(

@@ -14,7 +14,7 @@ class SyncDataProvider : ContentProvider() {
     private lateinit var syncDataStore: SyncDataStore
 
     override fun onCreate(): Boolean {
-        syncDataStore = SyncDataStore(context as Context)
+        syncDataStore = SyncDataStore.getInstance(context as Context)
         return true
     }
 
