@@ -7,11 +7,21 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class SyncDataStore(private val context: Context) {
+class SyncDataStore private constructor(private val context: Context) {
 
     private val Context.dataStore by preferencesDataStore(name = "sync_prefs")
 
     companion object {
+        private var INSTANCE: SyncDataStore? = null
+
+        fun getInstance(context: Context): SyncDataStore {
+            return INSTANCE ?: synchronized(this) {
+                val instance = SyncDataStore(context)
+                INSTANCE = instance
+                instance
+            }
+        }
+
         val LAST_SYNC_TIME_KEY = longPreferencesKey("last_sync_time")
         val TOTAL_STEPS_KEY = longPreferencesKey("total_steps")
         val RECENT_STEPS_KEY = longPreferencesKey("recent_steps")
