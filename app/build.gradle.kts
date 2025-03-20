@@ -53,4 +53,14 @@ dependencies {
     implementation ("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.1.2"))
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("io.ktor:ktor-client-core:3.1.1")
+    implementation("io.ktor:ktor-client-okhttp:3.1.1")
+    implementation("io.ktor:ktor-client-content-negotiation:3.1.1")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.1")
+
+
 }
