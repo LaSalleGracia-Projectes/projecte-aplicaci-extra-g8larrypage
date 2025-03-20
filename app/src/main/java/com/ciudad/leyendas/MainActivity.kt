@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                     saveLastSyncTime()
 
                     val androidId = getAndroidId(context)
-                    addData(androidId, steps.toInt())
+                    addData(this@MainActivity, androidId, steps.toInt())
                 } else {
                     val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
                     if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE && intent != null) {

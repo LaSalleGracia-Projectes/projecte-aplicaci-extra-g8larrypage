@@ -9,6 +9,7 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -77,7 +78,7 @@ fun encryptAndroidId(androidId: String, salt: ByteArray): String {
 
     return textoEncriptado
 }
-fun addData(androidId: String, nuevosPasos: Int) {
+fun addData(context: Context, androidId: String, nuevosPasos: Int) {
     val supabase = createSupabaseClient(
         supabaseUrl = "https://zlpjwwiqyssqrzlwinkj.supabase.co",
         supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGp3d2lxeXNzcXJ6bHdpbmtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc0NzQ2NzUsImV4cCI6MjA1MzA1MDY3NX0.ju7cIcFBP7cFD3I9e-F1s1hgHgOJMtOS6AHGaEngcWM"
@@ -85,17 +86,27 @@ fun addData(androidId: String, nuevosPasos: Int) {
         install(Postgrest)
     }
 
-    val salt = generateSalt()
-    val encryptedId = encryptAndroidId(androidId, salt)
-
-    val temporalData = TemporalData(
-        androidId = encryptedId,
-        nuevosPasos = nuevosPasos,
-        salt = Base64.encodeToString(salt, Base64.NO_WRAP)
-    )
-
     CoroutineScope(Dispatchers.IO).launch {
         try {
+            val syncDataStore = SyncDataStore.getInstance(context)
+
+            val savedSalt = syncDataStore.salt.first()
+            val salt = if (savedSalt != null) {
+                Base64.decode(savedSalt, Base64.NO_WRAP)
+            } else {
+                val newSalt = generateSalt()
+                syncDataStore.saveSalt(Base64.encodeToString(newSalt, Base64.NO_WRAP))
+                newSalt
+            }
+
+            val encryptedId = encryptAndroidId(androidId, salt)
+
+            val temporalData = TemporalData(
+                androidId = encryptedId,
+                nuevosPasos = nuevosPasos,
+                salt = Base64.encodeToString(salt, Base64.NO_WRAP)
+            )
+
             supabase.from("temporal_data").upsert(temporalData)
         } catch (e: Exception) {
             e.printStackTrace()
