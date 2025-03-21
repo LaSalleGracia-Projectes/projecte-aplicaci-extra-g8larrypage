@@ -29,8 +29,12 @@ data class TemporalData(
     @SerialName("android_id")
     val androidId: String,
 
-    @SerialName("nuevos_pasos")
+    @SerialName("pasos_totales")
+    val pasosTotales: Int,
+
+    @SerialName("pasos_nuevos_sync")
     val nuevosPasos: Int,
+
 
     @SerialName("salt")
     val salt: String
@@ -50,26 +54,22 @@ fun generateSalt(): ByteArray {
 
 @Throws(Exception::class)
 fun encryptAndroidId(androidId: String, salt: ByteArray): String {
-    val iteraciones = 500  // Para PBKDF2
+    val iteraciones = 500
     val keyLength = 256
 
-    // 1. Combinar salt con androidId (igual que antes)
     val saltedId = Base64.encodeToString(salt, Base64.NO_WRAP) + androidId
     val password = saltedId.toCharArray()
 
-    // 2. Generar clave con PBKDF2 (igual que antes)
     val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
     val spec = PBEKeySpec(password, salt, iteraciones, keyLength)
     val tmp = factory.generateSecret(spec)
     val secretKey = SecretKeySpec(tmp.encoded, "AES")
 
-    // 3. Configurar IV y cipher (igual que antes)
     val iv = salt.copyOf(16)
     val ivspec = IvParameterSpec(iv)
     val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
     cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivspec)
 
-    // 4. Encriptar 5 veces
     var textoEncriptado = saltedId
     repeat(5) {
         val bytesEncriptados = cipher.doFinal(textoEncriptado.toByteArray())
@@ -78,7 +78,8 @@ fun encryptAndroidId(androidId: String, salt: ByteArray): String {
 
     return textoEncriptado
 }
-fun addData(context: Context, androidId: String, nuevosPasos: Int) {
+
+fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
     val supabase = createSupabaseClient(
         supabaseUrl = "https://zlpjwwiqyssqrzlwinkj.supabase.co",
         supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGp3d2lxeXNzcXJ6bHdpbmtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc0NzQ2NzUsImV4cCI6MjA1MzA1MDY3NX0.ju7cIcFBP7cFD3I9e-F1s1hgHgOJMtOS6AHGaEngcWM"
@@ -89,6 +90,8 @@ fun addData(context: Context, androidId: String, nuevosPasos: Int) {
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val syncDataStore = SyncDataStore.getInstance(context)
+            val pasosTotalesAnteriores = syncDataStore.totalSteps.first() ?: 0
+            val pasosNuevos = pasosTotalesActuales - pasosTotalesAnteriores.toInt()
 
             val savedSalt = syncDataStore.salt.first()
             val salt = if (savedSalt != null) {
@@ -101,13 +104,42 @@ fun addData(context: Context, androidId: String, nuevosPasos: Int) {
 
             val encryptedId = encryptAndroidId(androidId, salt)
 
-            val temporalData = TemporalData(
-                androidId = encryptedId,
-                nuevosPasos = nuevosPasos,
-                salt = Base64.encodeToString(salt, Base64.NO_WRAP)
-            )
+            try {
+                val existingRecords = supabase
+                    .from("temporal_data")
+                    .select() {
+                        filter {
+                            eq("android_id", encryptedId)
+                        }
+                    }
+                    .decodeList<TemporalData>()
 
-            supabase.from("temporal_data").upsert(temporalData)
+                if (existingRecords.isNotEmpty()) {
+                    val existingRecord = existingRecords.first()
+                    supabase.from("temporal_data")
+                        .update({
+                            set("pasos_totales", pasosTotalesActuales)
+                            set("pasos_nuevos_sync", pasosNuevos)
+                            set("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
+                        }) {
+                            filter { existingRecord.id?.let { eq("id", it) } }
+                        }
+                } else {
+                    val temporalData = TemporalData(
+                        id = null,
+                        androidId = encryptedId,
+                        pasosTotales = pasosTotalesActuales,
+                        nuevosPasos = pasosNuevos,
+                        salt = Base64.encodeToString(salt, Base64.NO_WRAP)
+                    )
+                    supabase.from("temporal_data").insert(temporalData)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
+            syncDataStore.saveRecentSteps(pasosNuevos.toLong())
         } catch (e: Exception) {
             e.printStackTrace()
         }

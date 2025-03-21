@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -58,19 +57,13 @@ class SyncDataStore private constructor(private val context: Context) {
 
     suspend fun saveTotalSteps(steps: Long) {
         context.dataStore.edit { preferences ->
-            val currentTotalSteps = preferences[TOTAL_STEPS_KEY] ?: 0
-            val recentSteps = steps - currentTotalSteps
-            preferences[RECENT_STEPS_KEY] = recentSteps
-            preferences[TOTAL_STEPS_KEY] = currentTotalSteps + recentSteps
+            preferences[TOTAL_STEPS_KEY] = steps
         }
     }
 
-    suspend fun saveRecentSteps(steps: Long) {
+    suspend fun saveRecentSteps(nuevosPasos: Long) {
         context.dataStore.edit { preferences ->
-            val currentTotalSteps = preferences[TOTAL_STEPS_KEY] ?: 0
-            val recentSteps = steps - currentTotalSteps
-            preferences[RECENT_STEPS_KEY] = recentSteps
-            preferences[TOTAL_STEPS_KEY] = currentTotalSteps + recentSteps
+            preferences[RECENT_STEPS_KEY] = nuevosPasos
         }
     }
 
