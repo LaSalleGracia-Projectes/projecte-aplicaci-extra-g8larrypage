@@ -4,13 +4,13 @@ import SyncWorker
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.health.connect.client.HealthConnectClient
@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             val uriString = "https://play.google.com/store/apps/details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
             context.startActivity(
                 Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse(uriString)
+                    data = uriString.toUri()
                     setPackage("com.android.vending")
                 }
             )
@@ -115,6 +115,9 @@ class MainActivity : AppCompatActivity() {
                     val steps = readSteps(healthConnectClient)
                     tvSteps.text = "Pasos: $steps"
                     saveLastSyncTime()
+
+                    val androidId = getAndroidId(context)
+                    addData(this@MainActivity, androidId, steps.toInt())
                 } else {
                     val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
                     if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE && intent != null) {
@@ -144,7 +147,7 @@ class MainActivity : AppCompatActivity() {
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "SyncWork",
-            ExistingPeriodicWorkPolicy.REPLACE,
+            ExistingPeriodicWorkPolicy.UPDATE,
             syncWorkRequest
         )
     }

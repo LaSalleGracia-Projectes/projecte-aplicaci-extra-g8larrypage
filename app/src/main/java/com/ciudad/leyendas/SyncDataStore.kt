@@ -3,6 +3,7 @@ package com.ciudad.leyendas
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,6 +26,7 @@ class SyncDataStore private constructor(private val context: Context) {
         val LAST_SYNC_TIME_KEY = longPreferencesKey("last_sync_time")
         val TOTAL_STEPS_KEY = longPreferencesKey("total_steps")
         val RECENT_STEPS_KEY = longPreferencesKey("recent_steps")
+        val SALT_KEY = stringPreferencesKey("salt")
     }
 
     val lastSyncTime: Flow<Long?> = context.dataStore.data
@@ -42,6 +44,11 @@ class SyncDataStore private constructor(private val context: Context) {
             preferences[RECENT_STEPS_KEY]
         }
 
+    val salt: Flow<String?> = context.dataStore.data
+        .map { preferences ->
+            preferences[SALT_KEY]
+        }
+
     suspend fun saveLastSyncTime(time: Long) {
         context.dataStore.edit { preferences ->
             preferences[LAST_SYNC_TIME_KEY] = time
@@ -50,19 +57,19 @@ class SyncDataStore private constructor(private val context: Context) {
 
     suspend fun saveTotalSteps(steps: Long) {
         context.dataStore.edit { preferences ->
-            val currentTotalSteps = preferences[TOTAL_STEPS_KEY] ?: 0
-            val recentSteps = steps - currentTotalSteps
-            preferences[RECENT_STEPS_KEY] = recentSteps
-            preferences[TOTAL_STEPS_KEY] = currentTotalSteps + recentSteps
+            preferences[TOTAL_STEPS_KEY] = steps
         }
     }
 
-    suspend fun saveRecentSteps(steps: Long) {
+    suspend fun saveRecentSteps(nuevosPasos: Long) {
         context.dataStore.edit { preferences ->
-            val currentTotalSteps = preferences[TOTAL_STEPS_KEY] ?: 0
-            val recentSteps = steps - currentTotalSteps
-            preferences[RECENT_STEPS_KEY] = recentSteps
-            preferences[TOTAL_STEPS_KEY] = currentTotalSteps + recentSteps
+            preferences[RECENT_STEPS_KEY] = nuevosPasos
+        }
+    }
+
+    suspend fun saveSalt(salt: String) {
+        context.dataStore.edit { preferences ->
+            preferences[SALT_KEY] = salt
         }
     }
 }

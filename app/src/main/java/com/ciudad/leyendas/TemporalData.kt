@@ -1,0 +1,147 @@
+package com.ciudad.leyendas
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.provider.Settings
+import android.util.Base64
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
+
+
+@Serializable
+data class TemporalData(
+    @SerialName("id")
+    val id: String? = null,
+
+    @SerialName("android_id")
+    val androidId: String,
+
+    @SerialName("pasos_totales")
+    val pasosTotales: Int,
+
+    @SerialName("pasos_nuevos_sync")
+    val nuevosPasos: Int,
+
+
+    @SerialName("salt")
+    val salt: String
+)
+
+@SuppressLint("HardwareIds")
+fun getAndroidId(context: Context): String {
+    return Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+}
+
+fun generateSalt(): ByteArray {
+    val salt = ByteArray(16)
+    val secureRandom = SecureRandom()
+    secureRandom.nextBytes(salt)
+    return salt
+}
+
+@Throws(Exception::class)
+fun encryptAndroidId(androidId: String, salt: ByteArray): String {
+    val iteraciones = 500
+    val keyLength = 256
+
+    val saltedId = Base64.encodeToString(salt, Base64.NO_WRAP) + androidId
+    val password = saltedId.toCharArray()
+
+    val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+    val spec = PBEKeySpec(password, salt, iteraciones, keyLength)
+    val tmp = factory.generateSecret(spec)
+    val secretKey = SecretKeySpec(tmp.encoded, "AES")
+
+    val iv = salt.copyOf(16)
+    val ivspec = IvParameterSpec(iv)
+    val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivspec)
+
+    var textoEncriptado = saltedId
+    repeat(5) {
+        val bytesEncriptados = cipher.doFinal(textoEncriptado.toByteArray())
+        textoEncriptado = Base64.encodeToString(bytesEncriptados, Base64.NO_WRAP)
+    }
+
+    return textoEncriptado
+}
+
+fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
+    val supabase = createSupabaseClient(
+        supabaseUrl = "https://zlpjwwiqyssqrzlwinkj.supabase.co",
+        supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscGp3d2lxeXNzcXJ6bHdpbmtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc0NzQ2NzUsImV4cCI6MjA1MzA1MDY3NX0.ju7cIcFBP7cFD3I9e-F1s1hgHgOJMtOS6AHGaEngcWM"
+    ) {
+        install(Postgrest)
+    }
+
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val syncDataStore = SyncDataStore.getInstance(context)
+            val pasosTotalesAnteriores = syncDataStore.totalSteps.first() ?: 0
+            val pasosNuevos = pasosTotalesActuales - pasosTotalesAnteriores.toInt()
+
+            val savedSalt = syncDataStore.salt.first()
+            val salt = if (savedSalt != null) {
+                Base64.decode(savedSalt, Base64.NO_WRAP)
+            } else {
+                val newSalt = generateSalt()
+                syncDataStore.saveSalt(Base64.encodeToString(newSalt, Base64.NO_WRAP))
+                newSalt
+            }
+
+            val encryptedId = encryptAndroidId(androidId, salt)
+
+            try {
+                val existingRecords = supabase
+                    .from("temporal_data")
+                    .select() {
+                        filter {
+                            eq("android_id", encryptedId)
+                        }
+                    }
+                    .decodeList<TemporalData>()
+
+                if (existingRecords.isNotEmpty()) {
+                    val existingRecord = existingRecords.first()
+                    supabase.from("temporal_data")
+                        .update({
+                            set("pasos_totales", pasosTotalesActuales)
+                            set("pasos_nuevos_sync", pasosNuevos)
+                            set("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
+                        }) {
+                            filter { existingRecord.id?.let { eq("id", it) } }
+                        }
+                } else {
+                    val temporalData = TemporalData(
+                        id = null,
+                        androidId = encryptedId,
+                        pasosTotales = pasosTotalesActuales,
+                        nuevosPasos = pasosNuevos,
+                        salt = Base64.encodeToString(salt, Base64.NO_WRAP)
+                    )
+                    supabase.from("temporal_data").insert(temporalData)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
+            syncDataStore.saveRecentSteps(pasosNuevos.toLong())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
