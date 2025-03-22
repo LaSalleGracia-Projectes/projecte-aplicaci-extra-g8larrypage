@@ -33,11 +33,7 @@ data class TemporalData(
     val pasosTotales: Int,
 
     @SerialName("pasos_nuevos_sync")
-    val nuevosPasos: Int,
-
-
-    @SerialName("salt")
-    val salt: String
+    val nuevosPasos: Int
 )
 
 @SuppressLint("HardwareIds")
@@ -120,7 +116,6 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                         .update({
                             set("pasos_totales", pasosTotalesActuales)
                             set("pasos_nuevos_sync", pasosNuevos)
-                            set("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
                         }) {
                             filter { existingRecord.id?.let { eq("id", it) } }
                         }
@@ -129,8 +124,7 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                         id = null,
                         androidId = encryptedId,
                         pasosTotales = pasosTotalesActuales,
-                        nuevosPasos = pasosNuevos,
-                        salt = Base64.encodeToString(salt, Base64.NO_WRAP)
+                        nuevosPasos = pasosNuevos
                     )
                     supabase.from("temporal_data").insert(temporalData)
                 }
