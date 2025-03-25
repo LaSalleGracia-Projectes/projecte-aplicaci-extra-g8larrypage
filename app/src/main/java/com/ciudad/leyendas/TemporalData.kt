@@ -72,10 +72,6 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
 
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            val syncDataStore = SyncDataStore.getInstance(context)
-            val pasosTotalesAnteriores = syncDataStore.totalSteps.first() ?: 0
-            val pasosNuevos = pasosTotalesActuales - pasosTotalesAnteriores.toInt()
-
             val encryptedId = encryptAndroidId(androidId)
 
             try {
@@ -87,6 +83,13 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                         }
                     }
                     .decodeList<TemporalData>()
+
+                val pasosNuevos = if (existingRecords.isNotEmpty()) {
+                    val pasosTotalesAnteriores = existingRecords.first().pasosTotales
+                    pasosTotalesActuales - pasosTotalesAnteriores
+                } else {
+                    pasosTotalesActuales
+                }
 
                 if (existingRecords.isNotEmpty()) {
                     val existingRecord = existingRecords.first()
@@ -106,12 +109,13 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                     )
                     supabase.from("temporal_data").insert(temporalData)
                 }
+
+                val syncDataStore = SyncDataStore.getInstance(context)
+                syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
+                syncDataStore.saveRecentSteps(pasosNuevos.toLong())
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-
-            syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
-            syncDataStore.saveRecentSteps(pasosNuevos.toLong())
         } catch (e: Exception) {
             e.printStackTrace()
         }
