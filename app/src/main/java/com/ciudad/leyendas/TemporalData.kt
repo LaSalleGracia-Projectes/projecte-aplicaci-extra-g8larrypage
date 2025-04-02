@@ -33,7 +33,10 @@ data class TemporalData(
     val pasosTotales: Int,
 
     @SerialName("pasos_nuevos_sync")
-    val nuevosPasos: Int
+    val nuevosPasos: Int,
+
+    @SerialName("day")
+    val day: String? = null,
 )
 
 @SuppressLint("HardwareIds")
@@ -72,49 +75,78 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
 
     CoroutineScope(Dispatchers.IO).launch {
         try {
+            val syncDataStore = SyncDataStore.getInstance(context)
+            val ultimosPasosSincronizados = syncDataStore.totalSteps.first() ?: 0
             val encryptedId = encryptAndroidId(androidId)
+            val fechaActual = java.time.LocalDate.now().toString()
 
-            try {
-                val existingRecords = supabase
-                    .from("temporal_data")
-                    .select() {
-                        filter {
-                            eq("android_id", encryptedId)
-                        }
+            val existingRecords = supabase
+                .from("temporal_data")
+                .select() {
+                    filter {
+                        eq("android_id", encryptedId)
                     }
-                    .decodeList<TemporalData>()
+                }
+                .decodeList<TemporalData>()
 
-                val pasosNuevos = if (existingRecords.isNotEmpty()) {
-                    val pasosTotalesAnteriores = existingRecords.first().pasosTotales
-                    pasosTotalesActuales - pasosTotalesAnteriores
-                } else {
-                    pasosTotalesActuales
+            if (existingRecords.isNotEmpty()) {
+                val existingRecord = existingRecords.first()
+                val pasosTotalesAnteriores = existingRecord.pasosTotales
+                val pasosNuevosAnteriores = existingRecord.nuevosPasos
+                val diaAnterior = existingRecord.day ?: fechaActual
+                val esMismoDia = diaAnterior == fechaActual
+
+                if (esMismoDia && pasosTotalesActuales == ultimosPasosSincronizados.toInt()) {
+                    return@launch
                 }
 
-                if (existingRecords.isNotEmpty()) {
-                    val existingRecord = existingRecords.first()
+                val incrementoPasos = if (pasosTotalesActuales > ultimosPasosSincronizados) {
+                    pasosTotalesActuales - ultimosPasosSincronizados.toInt()
+                } else {
+                    0
+                }
+
+                val debeActualizar = if (!esMismoDia) {
+                    true
+                } else {
+                    incrementoPasos > 0
+                }
+
+                if (debeActualizar) {
+                    val pasosNuevosActualizados = if (!esMismoDia) {
+                        pasosTotalesActuales
+                    } else {
+                        pasosNuevosAnteriores + incrementoPasos
+                    }
+
+                    val pasosTotalesActualizados = if (!esMismoDia) {
+                        pasosTotalesAnteriores + pasosTotalesActuales
+                    } else {
+                        pasosTotalesAnteriores + incrementoPasos
+                    }
+
                     supabase.from("temporal_data")
                         .update({
-                            set("pasos_totales", pasosTotalesActuales)
-                            set("pasos_nuevos_sync", pasosNuevos)
+                            set("pasos_totales", pasosTotalesActualizados)
+                            set("pasos_nuevos_sync", pasosNuevosActualizados)
+                            set("day", fechaActual)
                         }) {
                             filter { existingRecord.id?.let { eq("id", it) } }
                         }
-                } else {
-                    val temporalData = TemporalData(
-                        id = null,
-                        androidId = encryptedId,
-                        pasosTotales = pasosTotalesActuales,
-                        nuevosPasos = pasosNuevos
-                    )
-                    supabase.from("temporal_data").insert(temporalData)
-                }
 
-                val syncDataStore = SyncDataStore.getInstance(context)
+                    syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
+                }
+            } else {
+                val temporalData = TemporalData(
+                    id = null,
+                    androidId = encryptedId,
+                    pasosTotales = pasosTotalesActuales,
+                    nuevosPasos = pasosTotalesActuales,
+                    day = fechaActual
+                )
+                supabase.from("temporal_data").insert(temporalData)
+
                 syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
-                syncDataStore.saveRecentSteps(pasosNuevos.toLong())
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         } catch (e: Exception) {
             e.printStackTrace()
