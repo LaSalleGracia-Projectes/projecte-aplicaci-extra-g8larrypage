@@ -83,7 +83,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (availabilityStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
-            val uriString = "https://play.google.com/store/apps/details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
+            val uriString =
+                "https://play.google.com/store/apps/details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
             context.startActivity(
                 Intent(Intent.ACTION_VIEW).apply {
                     data = uriString.toUri()
@@ -94,19 +95,21 @@ class MainActivity : AppCompatActivity() {
         }
         healthConnectClient = HealthConnectClient.getOrCreate(context)
 
-        val requestPermissionActivityContract = PermissionController.createRequestPermissionResultContract()
-        val requestPermissions = registerForActivityResult(requestPermissionActivityContract) { granted ->
-            if (granted.contains(permission)) {
-                Toast.makeText(this, "Permisos concedidos", Toast.LENGTH_SHORT).show()
-                lifecycleScope.launch {
-                    val steps = readSteps(healthConnectClient)
-                    tvSteps.text = "Pasos: $steps"
-                    saveLastSyncTime()
+        val requestPermissionActivityContract =
+            PermissionController.createRequestPermissionResultContract()
+        val requestPermissions =
+            registerForActivityResult(requestPermissionActivityContract) { granted ->
+                if (granted.contains(permission)) {
+                    Toast.makeText(this, "Permisos concedidos", Toast.LENGTH_SHORT).show()
+                    lifecycleScope.launch {
+                        val steps = readSteps(healthConnectClient)
+                        tvSteps.text = "Pasos: $steps"
+                        saveLastSyncTime()
+                    }
+                } else {
+                    Toast.makeText(this, "Faltan permisos requeridos", Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(this, "Faltan permisos requeridos", Toast.LENGTH_SHORT).show()
             }
-        }
 
         btnSync.setOnClickListener {
             lifecycleScope.launch {
@@ -119,11 +122,16 @@ class MainActivity : AppCompatActivity() {
                     val androidId = getAndroidId(context)
                     addData(this@MainActivity, androidId, steps.toInt())
                 } else {
-                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
+                    val intent =
+                        context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
                     if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE && intent != null) {
                         context.startActivity(intent)
                     } else {
-                        Toast.makeText(context, "Health Connect no está instalado", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            "Health Connect no está instalado",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             }
