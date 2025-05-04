@@ -37,6 +37,12 @@ data class TemporalData(
 
     @SerialName("day")
     val day: String? = null,
+
+    @SerialName("ultima_sincronizacion")
+    val ultimaSincronizacion: Long?,
+
+    @SerialName("registro_pasos_diarios")
+    val registroPasosDiarios: String?
 )
 
 @SuppressLint("HardwareIds")
@@ -76,9 +82,36 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val syncDataStore = SyncDataStore.getInstance(context)
-            val ultimosPasosSincronizados = syncDataStore.totalSteps.first() ?: 0
-            val encryptedId = encryptAndroidId(androidId)
+            val ultimosPasosSincronizados = syncDataStore.lastSyncValue.first() ?: 0
             val fechaActual = java.time.LocalDate.now().toString()
+            val encryptedId = encryptAndroidId(androidId)
+            val tiempoActual = System.currentTimeMillis()
+
+            val dailyStepsMapString = syncDataStore.dailyStepsMap.first()
+            val dailyStepsMap = try {
+                dailyStepsMapString?.let {
+                    kotlinx.serialization.json.Json.decodeFromString<Map<String, Int>>(it)
+                } ?: mutableMapOf()
+            } catch (e: Exception) {
+                mutableMapOf<String, Int>()
+            }.toMutableMap()
+
+            val pasosRegistradosHoy = dailyStepsMap[fechaActual] ?: 0
+
+
+            val incrementoPasos = if (pasosTotalesActuales > pasosRegistradosHoy) {
+                pasosTotalesActuales - pasosRegistradosHoy
+            } else 0
+
+            if (incrementoPasos <= 0 && pasosRegistradosHoy > 0) {
+                return@launch
+            }
+
+            dailyStepsMap[fechaActual] = pasosTotalesActuales
+            syncDataStore.saveDailyStepsMap(kotlinx.serialization.json.Json.encodeToString(dailyStepsMap))
+            syncDataStore.saveLastSyncValue(pasosTotalesActuales.toLong())
+
+            val pasosTotalesHistoricos = dailyStepsMap.values.sum()
 
             val existingRecords = supabase
                 .from("temporal_data")
@@ -91,62 +124,28 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
 
             if (existingRecords.isNotEmpty()) {
                 val existingRecord = existingRecords.first()
-                val pasosTotalesAnteriores = existingRecord.pasosTotales
-                val pasosNuevosAnteriores = existingRecord.nuevosPasos
-                val diaAnterior = existingRecord.day ?: fechaActual
-                val esMismoDia = diaAnterior == fechaActual
 
-                if (esMismoDia && pasosTotalesActuales == ultimosPasosSincronizados.toInt()) {
-                    return@launch
-                }
-
-                val incrementoPasos = if (pasosTotalesActuales > ultimosPasosSincronizados) {
-                    pasosTotalesActuales - ultimosPasosSincronizados.toInt()
-                } else {
-                    0
-                }
-
-                val debeActualizar = if (!esMismoDia) {
-                    true
-                } else {
-                    incrementoPasos > 0
-                }
-
-                if (debeActualizar) {
-                    val pasosNuevosActualizados = if (!esMismoDia) {
-                        pasosTotalesActuales
-                    } else {
-                        pasosNuevosAnteriores + incrementoPasos
+                supabase.from("temporal_data")
+                    .update({
+                        set("pasos_totales", pasosTotalesHistoricos)
+                        set("pasos_nuevos_sync", pasosTotalesActuales)
+                        set("day", fechaActual)
+                        set("ultima_sincronizacion", tiempoActual)
+                        set("registro_pasos_diarios", kotlinx.serialization.json.Json.encodeToString(dailyStepsMap))
+                    }) {
+                        filter { existingRecord.id?.let { eq("id", it) } }
                     }
-
-                    val pasosTotalesActualizados = if (!esMismoDia) {
-                        pasosTotalesAnteriores + pasosTotalesActuales
-                    } else {
-                        pasosTotalesAnteriores + incrementoPasos
-                    }
-
-                    supabase.from("temporal_data")
-                        .update({
-                            set("pasos_totales", pasosTotalesActualizados)
-                            set("pasos_nuevos_sync", pasosNuevosActualizados)
-                            set("day", fechaActual)
-                        }) {
-                            filter { existingRecord.id?.let { eq("id", it) } }
-                        }
-
-                    syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
-                }
             } else {
                 val temporalData = TemporalData(
                     id = null,
                     androidId = encryptedId,
-                    pasosTotales = pasosTotalesActuales,
+                    pasosTotales = pasosTotalesHistoricos,
                     nuevosPasos = pasosTotalesActuales,
-                    day = fechaActual
+                    day = fechaActual,
+                    ultimaSincronizacion = tiempoActual,
+                    registroPasosDiarios = kotlinx.serialization.json.Json.encodeToString(dailyStepsMap)
                 )
                 supabase.from("temporal_data").insert(temporalData)
-
-                syncDataStore.saveTotalSteps(pasosTotalesActuales.toLong())
             }
         } catch (e: Exception) {
             e.printStackTrace()
