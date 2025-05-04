@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.IvParameterSpec
@@ -108,7 +107,11 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
             }
 
             dailyStepsMap[fechaActual] = pasosTotalesActuales
-            syncDataStore.saveDailyStepsMap(kotlinx.serialization.json.Json.encodeToString(dailyStepsMap))
+            syncDataStore.saveDailyStepsMap(
+                kotlinx.serialization.json.Json.encodeToString(
+                    dailyStepsMap
+                )
+            )
             syncDataStore.saveLastSyncValue(pasosTotalesActuales.toLong())
 
             val pasosTotalesHistoricos = dailyStepsMap.values.sum()
@@ -131,7 +134,10 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                         set("pasos_nuevos_sync", pasosTotalesActuales)
                         set("day", fechaActual)
                         set("ultima_sincronizacion", tiempoActual)
-                        set("registro_pasos_diarios", kotlinx.serialization.json.Json.encodeToString(dailyStepsMap))
+                        set(
+                            "registro_pasos_diarios",
+                            kotlinx.serialization.json.Json.encodeToString(dailyStepsMap)
+                        )
                     }) {
                         filter { existingRecord.id?.let { eq("id", it) } }
                     }
@@ -143,7 +149,9 @@ fun addData(context: Context, androidId: String, pasosTotalesActuales: Int) {
                     nuevosPasos = pasosTotalesActuales,
                     day = fechaActual,
                     ultimaSincronizacion = tiempoActual,
-                    registroPasosDiarios = kotlinx.serialization.json.Json.encodeToString(dailyStepsMap)
+                    registroPasosDiarios = kotlinx.serialization.json.Json.encodeToString(
+                        dailyStepsMap
+                    )
                 )
                 supabase.from("temporal_data").insert(temporalData)
             }
